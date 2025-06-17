@@ -1,0 +1,575 @@
+import streamlit as st
+import pandas as pd
+import json
+import time
+from datetime import datetime, timedelta
+import plotly.express as px
+import plotly.graph_objects as go
+from typing import Dict, List, Any
+import uuid
+
+# Configure page
+st.set_page_config(
+    page_title="Comcast Business Sales Automation",
+    page_icon="📡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #0066cc;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin: 0.5rem 0;
+    }
+    .success-message {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 5px;
+        padding: 10px;
+        color: #155724;
+    }
+    .chat-message {
+        padding: 10px;
+        border-radius: 10px;
+        margin: 5px 0;
+    }
+    .customer-message {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196f3;
+    }
+    .agent-message {
+        background-color: #f3e5f5;
+        border-left: 4px solid #9c27b0;
+    }
+    .recommendation-card {
+        background: #fff3e0;
+        border: 1px solid #ffb74d;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'customers' not in st.session_state:
+    st.session_state.customers = {
+        'CUST001': {
+            'name': 'TechStart LLC',
+            'current_plan': '150 Mbps Business Internet',
+            'monthly_cost': 79.99,
+            'contract_start': '2022-06-15',
+            'team_size': 15,
+            'usage_gb': 850,
+            'plan_limit_gb': 1000,
+            'support_tickets': 3,
+            'last_interaction': '2024-12-01'
+        },
+        'CUST002': {
+            'name': 'Downtown Café',
+            'current_plan': '100 Mbps Basic',
+            'monthly_cost': 59.99,
+            'contract_start': '2023-01-10',
+            'team_size': 8,
+            'usage_gb': 320,
+            'plan_limit_gb': 500,
+            'support_tickets': 1,
+            'last_interaction': '2024-11-28'
+        }
+    }
+
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+if 'recommendations' not in st.session_state:
+    st.session_state.recommendations = []
+
+if 'sales_metrics' not in st.session_state:
+    st.session_state.sales_metrics = {
+        'total_upgrades': 24,
+        'revenue_generated': 45680,
+        'conversion_rate': 68.5,
+        'avg_deal_size': 127.50
+    }
+
+# Product catalog
+PRODUCTS = {
+    'internet': {
+        '150 Mbps Business Internet': {'price': 79.99, 'speed': '150 Mbps'},
+        'Gigabit Extra': {'price': 89.99, 'speed': '1.25 Gbps'},
+        'Business Internet 500': {'price': 129.99, 'speed': '500 Mbps'}
+    },
+    'security': {
+        'SecurityEdge™': {'price': 19.99, 'description': 'Network-level protection'},
+        'Advanced Cybersecurity': {'price': 49.99, 'description': 'Enterprise-grade security'}
+    },
+    'communication': {
+        'VoiceEdge®': {'price': 29.99, 'description': 'Unified communications'},
+        'Business Phone Pro': {'price': 39.99, 'description': 'Advanced phone systems'}
+    },
+    'tv': {
+        'X1 for Business': {'price': 34.99, 'description': 'Business entertainment solution'}
+    }
+}
+
+def generate_recommendation(customer_id: str, trigger: str) -> Dict:
+    """Generate personalized recommendations based on customer data and trigger"""
+    customer = st.session_state.customers[customer_id]
+    
+    recommendations = []
+    
+    if trigger == "slow_internet":
+        if "150 Mbps" in customer['current_plan']:
+            recommendations.append({
+                'type': 'upgrade',
+                'product': 'Gigabit Extra',
+                'current': customer['current_plan'],
+                'price': 89.99,
+                'savings': 'Only $10 more for 8x faster speeds',
+                'benefits': ['1.25 Gbps speed', 'Includes SecurityEdge™', 'Better team productivity']
+            })
+    
+    elif trigger == "security_concern":
+        recommendations.append({
+            'type': 'addon',
+            'product': 'SecurityEdge™',
+            'price': 19.99,
+            'benefits': ['Network-level protection', 'Malware blocking', '24/7 monitoring']
+        })
+    
+    elif trigger == "team_growth":
+        if customer['team_size'] > 10:
+            recommendations.append({
+                'type': 'upgrade',
+                'product': 'Business Internet 500',
+                'price': 129.99,
+                'benefits': ['500 Mbps speed', 'Priority support', 'Scalable bandwidth']
+            })
+    
+    return recommendations
+
+def simulate_ai_conversation(customer_id: str, issue: str):
+    """Simulate AI agent conversation"""
+    customer = st.session_state.customers[customer_id]
+    
+    conversations = {
+        "slow_internet": [
+            f"Hi! I see you're calling about internet speed issues. I'm sorry to hear that. Let me check your current plan.",
+            f"You're currently on our {customer['current_plan']} plan. Based on your team size of {customer['team_size']} people, I can see why you might be experiencing slowdowns.",
+            "I'd recommend upgrading to our Gigabit Extra plan - it offers speeds up to 1.25 Gbps and includes SecurityEdge™ protection, all for just $89.99/month.",
+            "This would give you 8x faster speeds and better support for your growing team. Would you like me to process this upgrade?"
+        ],
+        "billing_inquiry": [
+            "I can help you understand your recent bill increase. Let me review your account.",
+            f"I see you've been using {customer['usage_gb']}GB out of your {customer['plan_limit_gb']}GB limit. You've had some overage charges.",
+            "I can offer you our unlimited plan which would actually save you money in the long run. Would you like to hear about it?"
+        ]
+    }
+    
+    return conversations.get(issue, ["How can I help you today?"])
+
+# Sidebar Navigation
+st.sidebar.title("🏢 Comcast Business ADK")
+page = st.sidebar.selectbox("Navigate", 
+    ["Dashboard", "Customer Interactions", "Sales Automation", "Analytics", "Product Catalog"])
+
+# Main App
+if page == "Dashboard":
+    st.markdown('<h1 class="main-header">Sales Automation Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Key Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Upgrades", st.session_state.sales_metrics['total_upgrades'], "↗️ +12%")
+    
+    with col2:
+        st.metric("Revenue Generated", f"${st.session_state.sales_metrics['revenue_generated']:,}", "↗️ +23%")
+    
+    with col3:
+        st.metric("Conversion Rate", f"{st.session_state.sales_metrics['conversion_rate']}%", "↗️ +5.2%")
+    
+    with col4:
+        st.metric("Avg Deal Size", f"${st.session_state.sales_metrics['avg_deal_size']}", "↗️ +8%")
+    
+    # Charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📈 Daily Sales Performance")
+        dates = pd.date_range(start='2024-12-01', end='2024-12-15', freq='D')
+        sales_data = pd.DataFrame({
+            'Date': dates,
+            'Upgrades': [2, 4, 3, 6, 5, 8, 7, 9, 6, 11, 8, 12, 9, 15, 13],
+            'Revenue': [250, 480, 360, 720, 600, 960, 840, 1080, 720, 1320, 960, 1440, 1080, 1800, 1560]
+        })
+        
+        fig = px.line(sales_data, x='Date', y='Upgrades', title='Daily Upgrade Trends')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🎯 Conversion by Trigger Type")
+        trigger_data = pd.DataFrame({
+            'Trigger': ['Slow Internet', 'Billing Inquiry', 'Security Concern', 'Team Growth', 'Churn Risk'],
+            'Conversions': [45, 32, 28, 38, 22],
+            'Total Interactions': [65, 55, 42, 48, 35]
+        })
+        trigger_data['Conversion Rate'] = (trigger_data['Conversions'] / trigger_data['Total Interactions'] * 100).round(1)
+        
+        fig = px.bar(trigger_data, x='Trigger', y='Conversion Rate', 
+                    title='Conversion Rate by Trigger Type')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Recent Activity
+    st.subheader("🔔 Recent Sales Activities")
+    activities = [
+        {"time": "2 min ago", "customer": "TechStart LLC", "action": "Upgraded to Gigabit Extra", "revenue": "$89.99/mo"},
+        {"time": "15 min ago", "customer": "Downtown Café", "action": "Added SecurityEdge™", "revenue": "$19.99/mo"},
+        {"time": "1 hour ago", "customer": "City Medical", "action": "Upgraded Internet + Phone", "revenue": "$159.98/mo"},
+        {"time": "2 hours ago", "customer": "Local Retail", "action": "Added Business TV", "revenue": "$34.99/mo"}
+    ]
+    
+    for activity in activities:
+        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+        with col1:
+            st.write(activity["time"])
+        with col2:
+            st.write(activity["customer"])
+        with col3:
+            st.write(activity["action"])
+        with col4:
+            st.write(activity["revenue"])
+
+elif page == "Customer Interactions":
+    st.title("💬 Customer Interaction Simulator")
+    
+    # Customer Selection
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Select Customer")
+        customer_id = st.selectbox("Customer", list(st.session_state.customers.keys()),
+                                 format_func=lambda x: st.session_state.customers[x]['name'])
+        
+        customer = st.session_state.customers[customer_id]
+        
+        st.write("**Customer Details:**")
+        st.write(f"• Plan: {customer['current_plan']}")
+        st.write(f"• Monthly Cost: ${customer['monthly_cost']}")
+        st.write(f"• Team Size: {customer['team_size']}")
+        st.write(f"• Usage: {customer['usage_gb']}/{customer['plan_limit_gb']} GB")
+        
+        st.subheader("Interaction Trigger")
+        trigger = st.selectbox("Select Issue", 
+            ["slow_internet", "billing_inquiry", "security_concern", "team_growth", "churn_risk"])
+        
+        if st.button("🚀 Start AI Conversation"):
+            conversation = simulate_ai_conversation(customer_id, trigger)
+            st.session_state.current_conversation = conversation
+            st.session_state.conversation_step = 0
+    
+    with col2:
+        st.subheader("AI Agent Conversation")
+        
+        if hasattr(st.session_state, 'current_conversation'):
+            # Display conversation
+            for i, message in enumerate(st.session_state.current_conversation):
+                if i % 2 == 0:
+                    st.markdown(f'<div class="chat-message agent-message"><strong>AI Agent:</strong> {message}</div>', 
+                              unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="chat-message customer-message"><strong>Customer:</strong> {message}</div>', 
+                              unsafe_allow_html=True)
+            
+            # Generate and display recommendations
+            recommendations = generate_recommendation(customer_id, trigger)
+            
+            if recommendations:
+                st.subheader("🎯 AI-Generated Recommendations")
+                for rec in recommendations:
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="recommendation-card">
+                            <h4>💡 {rec['type'].title()}: {rec['product']}</h4>
+                            <p><strong>Price:</strong> ${rec['price']}/month</p>
+                            <p><strong>Benefits:</strong> {', '.join(rec['benefits'])}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(f"✅ Accept {rec['product']}", key=f"accept_{rec['product']}"):
+                                st.session_state.sales_metrics['total_upgrades'] += 1
+                                st.session_state.sales_metrics['revenue_generated'] += rec['price'] * 12
+                                st.success(f"🎉 Customer upgraded to {rec['product']}!")
+                                st.rerun()
+                        
+                        with col2:
+                            if st.button(f"❌ Decline {rec['product']}", key=f"decline_{rec['product']}"):
+                                st.info("Customer declined the offer.")
+
+elif page == "Sales Automation":
+    st.title("🤖 Sales Automation Engine")
+    
+    tab1, tab2, tab3 = st.tabs(["Trigger Management", "Flow Configuration", "Performance"])
+    
+    with tab1:
+        st.subheader("Sales Trigger Configuration")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Active Triggers:**")
+            triggers = [
+                {"name": "Slow Internet Reports", "status": "Active", "conversions": 45},
+                {"name": "Billing Inquiries", "status": "Active", "conversions": 32},
+                {"name": "Security Concerns", "status": "Active", "conversions": 28},
+                {"name": "Team Growth Detection", "status": "Active", "conversions": 38},
+                {"name": "Churn Risk Alerts", "status": "Paused", "conversions": 22}
+            ]
+            
+            for trigger in triggers:
+                col_a, col_b, col_c = st.columns([2, 1, 1])
+                with col_a:
+                    st.write(trigger["name"])
+                with col_b:
+                    st.write(f"✅ {trigger['status']}" if trigger['status'] == 'Active' else f"⏸️ {trigger['status']}")
+                with col_c:
+                    st.write(f"{trigger['conversions']} conv.")
+        
+        with col2:
+            st.write("**Create New Trigger:**")
+            
+            trigger_name = st.text_input("Trigger Name")
+            trigger_condition = st.selectbox("Condition", 
+                ["Usage > 80%", "Support tickets > 3", "Plan age > 1 year", "Team size increased"])
+            trigger_action = st.selectbox("Action", 
+                ["Send email", "Agent prompt", "In-app notification", "SMS"])
+            
+            if st.button("Create Trigger"):
+                st.success("✅ New trigger created successfully!")
+    
+    with tab2:
+        st.subheader("Sales Flow Configuration")
+        
+        flow_data = {
+            "Flow Name": ["Internet Upgrade Flow", "Security Addon Flow", "Retention Flow"],
+            "Trigger": ["Slow internet complaint", "Security inquiry", "Churn risk detected"],
+            "Success Rate": ["72%", "65%", "58%"],
+            "Avg Revenue": ["$127", "$67", "$89"],
+            "Status": ["Active", "Active", "Testing"]
+        }
+        
+        df = pd.DataFrame(flow_data)
+        st.dataframe(df, use_container_width=True)
+        
+        # Flow Builder
+        st.subheader("Visual Flow Builder")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("""
+            **Step 1: Trigger**
+            ```
+            Customer Issue Detected
+            ↓
+            Analyze Customer Data
+            ```
+            """)
+        
+        with col2:
+            st.markdown("""
+            **Step 2: Recommendation**
+            ```
+            Generate Personalized Offer
+            ↓
+            Present to Customer
+            ```
+            """)
+        
+        with col3:
+            st.markdown("""
+            **Step 3: Conversion**
+            ```
+            Customer Decision
+            ↓
+            Process Upgrade/Decline
+            ```
+            """)
+    
+    with tab3:
+        st.subheader("Automation Performance")
+        
+        # Performance metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Automated Interactions", "1,247", "↗️ +18%")
+        
+        with col2:
+            st.metric("AI Accuracy", "94.2%", "↗️ +2.1%")
+        
+        with col3:
+            st.metric("Response Time", "1.2s", "↘️ -0.3s")
+        
+        # Performance over time
+        performance_data = pd.DataFrame({
+            'Week': ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+            'Interactions': [856, 1024, 1156, 1247],
+            'Conversions': [312, 389, 445, 482],
+            'Revenue': [39640, 49436, 56540, 61244]
+        })
+        
+        fig = px.line(performance_data, x='Week', y=['Interactions', 'Conversions'], 
+                     title='Weekly Performance Trends')
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Analytics":
+    st.title("📊 Sales Analytics & Insights")
+    
+    tab1, tab2, tab3 = st.tabs(["Revenue Analytics", "Customer Insights", "Product Performance"])
+    
+    with tab1:
+        st.subheader("Revenue Analytics")
+        
+        # Revenue breakdown
+        revenue_data = pd.DataFrame({
+            'Product Category': ['Internet Upgrades', 'Security Add-ons', 'Communication', 'Business TV'],
+            'Revenue': [28500, 12400, 8900, 5600],
+            'Customers': [142, 78, 56, 34]
+        })
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = px.pie(revenue_data, values='Revenue', names='Product Category', 
+                        title='Revenue by Product Category')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            fig = px.bar(revenue_data, x='Product Category', y='Customers', 
+                        title='Customers by Product Category')
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        st.subheader("Customer Insights")
+        
+        # Customer segmentation
+        segments = pd.DataFrame({
+            'Segment': ['Small Business', 'Growing Teams', 'Enterprise', 'Hospitality'],
+            'Count': [45, 62, 28, 18],
+            'Avg Revenue': [89.50, 156.30, 234.80, 67.20],
+            'Conversion Rate': [68, 74, 82, 59]
+        })
+        
+        st.dataframe(segments, use_container_width=True)
+        
+        # Customer lifecycle
+        st.subheader("Customer Lifecycle Analysis")
+        lifecycle_data = pd.DataFrame({
+            'Stage': ['New Customer', '3-6 Months', '6-12 Months', '1+ Years'],
+            'Upgrade Probability': [25, 45, 68, 82],
+            'Avg Spend': [79, 123, 167, 203]
+        })
+        
+        fig = px.scatter(lifecycle_data, x='Upgrade Probability', y='Avg Spend', 
+                        size='Upgrade Probability', text='Stage',
+                        title='Customer Lifecycle vs Spending')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        st.subheader("Product Performance")
+        
+        # Product adoption rates
+        products = pd.DataFrame({
+            'Product': ['Gigabit Extra', 'SecurityEdge™', 'VoiceEdge®', 'X1 Business', 'SD-WAN'],
+            'Adoption Rate': [72, 65, 48, 34, 28],
+            'Customer Satisfaction': [4.6, 4.4, 4.2, 4.3, 4.5],
+            'Monthly Revenue': [8945, 3456, 2890, 1678, 2234]
+        })
+        
+        fig = px.scatter(products, x='Adoption Rate', y='Customer Satisfaction', 
+                        size='Monthly Revenue', text='Product',
+                        title='Product Performance Matrix')
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Product Catalog":
+    st.title("📦 Product Catalog Management")
+    
+    tab1, tab2 = st.tabs(["Current Products", "Recommendations Engine"])
+    
+    with tab1:
+        st.subheader("Comcast Business Products")
+        
+        for category, products in PRODUCTS.items():
+            st.write(f"### {category.title()}")
+            
+            for product, details in products.items():
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    st.write(f"**{product}**")
+                    if 'description' in details:
+                        st.write(details['description'])
+                    if 'speed' in details:
+                        st.write(f"Speed: {details['speed']}")
+                
+                with col2:
+                    st.write(f"${details['price']}/month")
+                
+                with col3:
+                    if st.button(f"Edit", key=f"edit_{product}"):
+                        st.info(f"Editing {product}")
+    
+    with tab2:
+        st.subheader("Smart Recommendations Engine")
+        
+        st.write("**Recommendation Logic:**")
+        
+        rules = [
+            {"condition": "Customer reports slow internet", "recommendation": "Upgrade to higher speed tier"},
+            {"condition": "Team size > 10 people", "recommendation": "Suggest Gigabit Extra + SecurityEdge™"},
+            {"condition": "Multiple support tickets", "recommendation": "Offer managed services"},
+            {"condition": "High data usage", "recommendation": "Unlimited plan upgrade"},
+            {"condition": "Security inquiry", "recommendation": "Add cybersecurity package"}
+        ]
+        
+        for rule in rules:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"📋 {rule['condition']}")
+            with col2:
+                st.write(f"💡 {rule['recommendation']}")
+        
+        st.subheader("Test Recommendation Engine")
+        
+        test_customer = st.selectbox("Test Customer", 
+            ["Small retail store (5 employees)", "Growing tech startup (20 employees)", 
+             "Restaurant chain (3 locations)", "Medical office (12 staff)"])
+        
+        test_scenario = st.selectbox("Scenario", 
+            ["Slow internet complaint", "Security breach concern", "Need for remote work", 
+             "Expanding to new location"])
+        
+        if st.button("Generate Recommendation"):
+            st.success("🎯 Recommended: Gigabit Extra + SecurityEdge™ bundle for $109.98/month")
+            st.write("**Reasoning:**")
+            st.write("• Customer profile indicates growing business needs")
+            st.write("• Current plan insufficient for team size")
+            st.write("• Security add-on addresses compliance requirements")
+
+# Footer
+st.markdown("---")
+st.markdown("**Comcast Business Sales Automation System** | Powered by Google Cloud ADK | Built with Streamlit")
