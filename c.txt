@@ -1,0 +1,459 @@
+
+    # API Configuration
+    COMCAST_API_URL = os.getenv('COMCAST_API_URL')
+    COMCAST_API_KEY = os.getenv('COMCAST_API_KEY')
+    CRM_WEBHOOK_URL = os.getenv('CRM_WEBHOOK_URL')
+6. Utility Functions
+Create utils/data_processing.py:
+pythonimport pandas as pd
+import json
+from typing import Dict, List, Any
+from datetime import datetime, timedelta
+import logging
+
+class DataProcessor:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def load_customer_data(self, file_path: str = None) -> Dict:
+        """Load customer data from file or database"""
+        if file_path:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        else:
+            # Load from BigQuery or other source
+            return self._fetch_from_bigquery()
+    
+    def analyze_customer_behavior(self, customer_data: Dict) -> Dict:
+        """Analyze customer behavior patterns"""
+        analysis = {
+            'usage_trend': self._calculate_usage_trend(customer_data),
+            'support_frequency': self._calculate_support_frequency(customer_data),
+            'upgrade_probability': self._calculate_upgrade_probability(customer_data),
+            'churn_risk': self._calculate_churn_risk(customer_data)
+        }
+        return analysis
+    
+    def _calculate_usage_trend(self, customer_data: Dict) -> str:
+        """Calculate usage trend over time"""
+        usage = customer_data.get('usage_gb', 0)
+        limit = customer_data.get('plan_limit_gb', 1000)
+        
+        usage_percentage = (usage / limit) * 100
+        
+        if usage_percentage > 90:
+            return "high_usage"
+        elif usage_percentage > 70:
+            return "moderate_usage"
+        else:
+            return "low_usage"
+    
+    def _calculate_support_frequency(self, customer_data: Dict) -> str:
+        """Calculate support ticket frequency"""
+        tickets = customer_data.get('support_tickets', 0)
+        
+        if tickets > 5:
+            return "high_support"
+        elif tickets > 2:
+            return "moderate_support"
+        else:
+            return "low_support"
+    
+    def _calculate_upgrade_probability(self, customer_data: Dict) -> float:
+        """Calculate probability of upgrade based on various factors"""
+        score = 0.0
+        
+        # Usage factor
+        usage_percentage = (customer_data.get('usage_gb', 0) / 
+                          customer_data.get('plan_limit_gb', 1000)) * 100
+        if usage_percentage > 80:
+            score += 0.3
+        elif usage_percentage > 60:
+            score += 0.2
+        
+        # Team size factor
+        team_size = customer_data.get('team_size', 1)
+        if team_size > 15:
+            score += 0.25
+        elif team_size > 10:
+            score += 0.15
+        
+        # Contract age factor
+        contract_start = datetime.strptime(customer_data.get('contract_start'), '%Y-%m-%d')
+        days_since_start = (datetime.now() - contract_start).days
+        if days_since_start > 365:
+            score += 0.2
+        elif days_since_start > 180:
+            score += 0.1
+        
+        # Support tickets factor
+        tickets = customer_data.get('support_tickets', 0)
+        if tickets > 3:
+            score += 0.15
+        
+        return min(score, 1.0)
+    
+    def _calculate_churn_risk(self, customer_data: Dict) -> str:
+        """Calculate churn risk level"""
+        last_interaction = datetime.strptime(customer_data.get('last_interaction'), '%Y-%m-%d')
+        days_since_interaction = (datetime.now() - last_interaction).days
+        
+        support_tickets = customer_data.get('support_tickets', 0)
+        
+        if days_since_interaction > 90 and support_tickets > 5:
+            return "high"
+        elif days_since_interaction > 60 or support_tickets > 3:
+            return "medium"
+        else:
+            return "low"
+Create utils/ai_models.py:
+pythonimport vertexai
+from vertexai.language_models import TextGenerationModel
+from google.cloud import aiplatform
+import json
+from typing import Dict, List, Any
+from config import Config
+
+class AIRecommendationEngine:
+    def __init__(self):
+        vertexai.init(project=Config.PROJECT_ID, location=Config.MODEL_REGION)
+        self.model = TextGenerationModel.from_pretrained(Config.MODEL_NAME)
+    
+    def generate_sales_recommendation(self, customer_data: Dict, trigger: str) -> Dict:
+        """Generate personalized sales recommendations using AI"""
+        
+        prompt = self._build_recommendation_prompt(customer_data, trigger)
+        
+        response = self.model.predict(
+            prompt,
+            temperature=Config.TEMPERATURE,
+            max_output_tokens=Config.MAX_TOKENS,
+        )
+        
+        return self._parse_recommendation_response(response.text)
+    
+    def _build_recommendation_prompt(self, customer_data: Dict, trigger: str) -> str:
+        """Build prompt for AI model"""
+        
+        prompt = f"""
+        You are a sales automation AI for Comcast Business. Generate personalized product recommendations.
+        
+        Customer Profile:
+        - Name: {customer_data.get('name')}
+        - Current Plan: {customer_data.get('current_plan')}
+        - Team Size: {customer_data.get('team_size')}
+        - Monthly Usage: {customer_data.get('usage_gb')}GB
+        - Support Tickets: {customer_data.get('support_tickets')}
+        
+        Trigger Event: {trigger}
+        
+        Available Products:
+        - Gigabit Extra (1.25 Gbps): $89.99/month
+        - SecurityEdge™: $19.99/month
+        - VoiceEdge®: $29.99/month
+        - Business TV: $34.99/month
+        
+        Provide recommendations in JSON format:
+        {{
+            "primary_recommendation": {{
+                "product": "product_name",
+                "price": 89.99,
+                "reasoning": "explanation",
+                "benefits": ["benefit1", "benefit2"]
+            }},
+            "secondary_recommendations": [...],
+            "talking_points": ["point1", "point2"],
+            "objection_handling": {{"common_objection": "response"}}
+        }}
+        """
+        
+        return prompt
+    
+    def _parse_recommendation_response(self, response_text: str) -> Dict:
+        """Parse AI response into structured format"""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback to rule-based recommendation
+            return self._fallback_recommendation()
+    
+    def _fallback_recommendation(self) -> Dict:
+        """Fallback recommendation if AI parsing fails"""
+        return {
+            "primary_recommendation": {
+                "product": "Gigabit Extra",
+                "price": 89.99,
+                "reasoning": "Based on usage patterns, an upgrade would improve performance",
+                "benefits": ["Faster speeds", "Better reliability", "Future-proof"]
+            },
+            "talking_points": ["Improved productivity", "Cost-effective upgrade"],
+            "objection_handling": {"price_concern": "Only $10 more for 8x faster speeds"}
+        }
+    
+    def generate_conversation_flow(self, customer_data: Dict, issue: str) -> List[str]:
+        """Generate AI-powered conversation flow"""
+        
+        prompt = f"""
+        Generate a natural customer service conversation for this scenario:
+        
+        Customer: {customer_data.get('name')}
+        Issue: {issue}
+        Current Plan: {customer_data.get('current_plan')}
+        
+        Create 4-6 realistic conversation turns that lead to a sales opportunity.
+        Format as a Python list of strings.
+        """
+        
+        response = self.model.predict(prompt, temperature=0.8, max_output_tokens=512)
+        
+        # Parse response or return default
+        try:
+            return eval(response.text)  # Note: In production, use safer parsing
+        except:
+            return [
+                "I understand you're experiencing issues. Let me help with that.",
+                "I've reviewed your account and see some opportunities to improve your experience.",
+                "Based on your usage, I can recommend a solution that would work better for you.",
+                "Would you like to hear about our upgrade options?"
+            ]
+Create utils/integrations.py:
+pythonimport requests
+import json
+from typing import Dict, Any
+from config import Config
+import logging
+
+class ComcastAPIIntegration:
+    def __init__(self):
+        self.base_url = Config.COMCAST_API_URL
+        self.api_key = Config.COMCAST_API_KEY
+        self.logger = logging.getLogger(__name__)
+    
+    def get_customer_data(self, customer_id: str) -> Dict:
+        """Fetch customer data from Comcast API"""
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        try:
+            response = requests.get(
+                f'{self.base_url}/customers/{customer_id}',
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            self.logger.error(f"Error fetching customer data: {e}")
+            return {}
+    
+    def submit_upgrade_request(self, customer_id: str, upgrade_details: Dict) -> Dict:
+        """Submit upgrade request to Comcast systems"""
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'customer_id': customer_id,
+            'upgrade_type': upgrade_details.get('type'),
+            'new_plan': upgrade_details.get('new_plan'),
+            'effective_date': upgrade_details.get('effective_date'),
+            'agent_id': upgrade_details.get('agent_id', 'AI_AGENT')
+        }
+        
+        try:
+            response = requests.post(
+                f'{self.base_url}/upgrades',
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            self.logger.error(f"Error submitting upgrade: {e}")
+            return {'status': 'error', 'message': str(e)}
+
+class CRMIntegration:
+    def __init__(self):
+        self.webhook_url = Config.CRM_WEBHOOK_URL
+        self.logger = logging.getLogger(__name__)
+    
+    def log_interaction(self, interaction_data: Dict) -> bool:
+        """Log customer interaction to CRM"""
+        try:
+            response = requests.post(
+                self.webhook_url,
+                json=interaction_data,
+                timeout=10
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            self.logger.error(f"Error logging to CRM: {e}")
+            return False
+    
+    def update_customer_status(self, customer_id: str, status: str) -> bool:
+        """Update customer status in CRM"""
+        payload = {
+            'customer_id': customer_id,
+            'status': status,
+            'timestamp': str(datetime.now()),
+            'source': 'sales_automation'
+        }
+        
+        return self.log_interaction(payload)
+7. Sample Data Files
+Create data/customers.json:
+json{
+  "CUST001": {
+    "name": "TechStart LLC",
+    "current_plan": "150 Mbps Business Internet",
+    "monthly_cost": 79.99,
+    "contract_start": "2022-06-15",
+    "team_size": 15,
+    "usage_gb": 850,
+    "plan_limit_gb": 1000,
+    "support_tickets": 3,
+    "last_interaction": "2024-12-01",
+    "industry": "Technology",
+    "location": "Austin, TX"
+  },
+  "CUST002": {
+    "name": "Downtown Café",
+    "current_plan": "100 Mbps Basic",
+    "monthly_cost": 59.99,
+    "contract_start": "2023-01-10",
+    "team_size": 8,
+    "usage_gb": 320,
+    "plan_limit_gb": 500,
+    "support_tickets": 1,
+    "last_interaction": "2024-11-28",
+    "industry": "Food & Beverage",
+    "location": "Portland, OR"
+  }
+}
+8. Running the Application
+Local Development:
+bash# Set environment variables
+export GOOGLE_APPLICATION_CREDENTIALS="path/to/key.json"
+
+# Run Streamlit app
+streamlit run app.py
+Production Deployment on Google Cloud:
+Create app.yaml for App Engine:
+yamlruntime: python39
+
+env_variables:
+  GOOGLE_CLOUD_PROJECT: comcast-sales-automation
+  STREAMLIT_SERVER_PORT: 8080
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 10
+  target_cpu_utilization: 0.6
+
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+Deploy:
+bashgcloud app deploy app.yaml
+9. Security & Authentication
+Add authentication to your Streamlit app:
+pythonimport streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
+
+# Load authentication config
+with open('auth_config.yaml') as file:
+    config = yaml.load(file, Loader=SafeLoader)
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
+
+name, authentication_status, username = authenticator.login('Login', 'main')
+
+if authentication_status:
+    # Your main app code here
+    authenticator.logout('Logout', 'main')
+elif authentication_status == False:
+    st.error('Username/password is incorrect')
+elif authentication_status == None:
+    st.warning('Please enter your username and password')
+10. Monitoring & Logging
+Set up logging:
+pythonimport logging
+import google.cloud.logging
+
+# Set up Google Cloud Logging
+client = google.cloud.logging.Client()
+client.setup_logging()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+11. Testing
+Create test_app.py:
+pythonimport pytest
+import streamlit as st
+from unittest.mock import patch, MagicMock
+
+def test_customer_data_loading():
+    """Test customer data loading functionality"""
+    # Your test code here
+    pass
+
+def test_ai_recommendations():
+    """Test AI recommendation generation"""
+    # Your test code here
+    pass
+
+def test_sales_automation():
+    """Test sales automation workflows"""
+    # Your test code here
+    pass
+Run tests:
+bashpytest test_app.py
+🚀 Additional Features to Implement
+
+Real-time Data Sync: Connect to live Comcast systems
+Advanced Analytics: Implement predictive modeling
+Mobile Responsiveness: Optimize for mobile devices
+Multi-language Support: Add internationalization
+A/B Testing: Test different recommendation strategies
+Performance Monitoring: Track app performance metrics
+Automated Reporting: Generate and email reports
+Integration Hub: Connect with more external systems
+
+📈 Scaling Considerations
+
+Use Google Cloud Run for containerized deployment
+Implement caching with Redis
+Use Cloud SQL for persistent data storage
+Set up load balancing for high traffic
+Implement rate limiting for API calls
+Use Cloud Monitoring for observability
+
+🔧 Troubleshooting
+Common issues and solutions:
+
+Authentication Issues: Check service account permissions
+API Rate Limits: Implement exponential backoff
+Memory Issues: Optimize data processing and caching
+Slow Performance: Use async operations and connection pooling
+
+📚 Resources
+
+Streamlit Documentation
+Google Cloud AI Platform
+Vertex AI Documentation
+BigQuery Documentation
