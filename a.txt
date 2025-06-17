@@ -1,0 +1,97 @@
+2. Install Dependencies
+Create requirements.txt:
+txtstreamlit==1.29.0
+pandas==2.1.3
+plotly==5.17.0
+google-cloud-aiplatform==1.38.1
+google-cloud-storage==2.10.0
+google-cloud-bigquery==3.11.4
+google-auth==2.23.4
+requests==2.31.0
+python-dotenv==1.0.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+streamlit-authenticator==0.2.3
+streamlit-option-menu==0.3.6
+Install dependencies:
+bashpip install -r requirements.txt
+3. Google Cloud Configuration
+Set up Google Cloud Project:
+bash# Create new project
+gcloud projects create comcast-sales-automation
+
+# Set project
+gcloud config set project comcast-sales-automation
+
+# Enable required APIs
+gcloud services enable aiplatform.googleapis.com
+gcloud services enable bigquery.googleapis.com
+gcloud services enable storage.googleapis.com
+gcloud services enable cloudfunctions.googleapis.com
+Create Service Account:
+bash# Create service account
+gcloud iam service-accounts create sales-automation-sa \
+    --display-name="Sales Automation Service Account"
+
+# Grant necessary permissions
+gcloud projects add-iam-policy-binding comcast-sales-automation \
+    --member="serviceAccount:sales-automation-sa@comcast-sales-automation.iam.gserviceaccount.com" \
+    --role="roles/aiplatform.user"
+
+gcloud projects add-iam-policy-binding comcast-sales-automation \
+    --member="serviceAccount:sales-automation-sa@comcast-sales-automation.iam.gserviceaccount.com" \
+    --role="roles/bigquery.dataEditor"
+
+# Create and download key
+gcloud iam service-accounts keys create key.json \
+    --iam-account=sales-automation-sa@comcast-sales-automation.iam.gserviceaccount.com
+4. Environment Configuration
+Create .env file:
+env# Google Cloud Configuration
+GOOGLE_CLOUD_PROJECT=comcast-sales-automation
+GOOGLE_APPLICATION_CREDENTIALS=key.json
+GCS_BUCKET_NAME=comcast-sales-data
+BIGQUERY_DATASET=sales_automation
+
+# Streamlit Configuration
+STREAMLIT_SERVER_PORT=8501
+STREAMLIT_SERVER_ADDRESS=0.0.0.0
+
+# Application Settings
+DEBUG=True
+SECRET_KEY=your-secret-key-here
+DATABASE_URL=postgresql://user:password@localhost:5432/sales_db
+
+# AI Model Configuration
+MODEL_NAME=text-bison
+MODEL_REGION=us-central1
+TEMPERATURE=0.7
+MAX_TOKENS=1024
+
+# External Integrations
+COMCAST_API_URL=https://api.comcast.com/v1
+COMCAST_API_KEY=your-api-key
+CRM_WEBHOOK_URL=https://your-crm.com/webhook
+5. Configuration Files
+Create config.py:
+pythonimport os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    # Google Cloud Settings
+    PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT')
+    CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    BUCKET_NAME = os.getenv('GCS_BUCKET_NAME')
+    DATASET_ID = os.getenv('BIGQUERY_DATASET')
+    
+    # Model Configuration
+    MODEL_NAME = os.getenv('MODEL_NAME', 'text-bison')
+    MODEL_REGION = os.getenv('MODEL_REGION', 'us-central1')
+    TEMPERATURE = float(os.getenv('TEMPERATURE', 0.7))
+    MAX_TOKENS = int(os.getenv('MAX_TOKENS', 1024))
+    
+    # Application Settings
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    SECRET_KEY = os.getenv('SECRET_KEY
